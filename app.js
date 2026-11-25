@@ -78,8 +78,12 @@ const okFam = (it) => !S.fam || it.familia === S.fam || it.familia === "Geral" |
 function toast(t) { const r = $("toastRoot"); r.innerHTML = '<div class="toast" role="status">' + esc(t) + "</div>"; clearTimeout(toast.t); toast.t = setTimeout(() => { r.innerHTML = ""; }, 2200); }
 function cidade(it) {
   const s = (it.titulo || "") + " " + (it.local || "");
-  const c = (S.info && S.info.cidades) || ["Santiago", "Temuco", "Pucón", "Puerto Varas", "Castro", "Chiloé"];
-  for (const x of c) if (s.indexOf(x) >= 0) return x === "Castro" ? "Chiloé" : x;
+  const salvas = String(S.info && S.info.cidades || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const c = salvas.concat(["Santiago", "Temuco", "Pucón", "Puerto Varas", "Castro", "Chiloé"].filter((x) => salvas.indexOf(x) < 0));
+  const temChiloe = salvas.indexOf("Chiloé") >= 0 || salvas.indexOf("Castro") < 0;
+  const norm = (t) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const alvo = norm(s);
+  for (const x of c) if (x.length > 2 && alvo.indexOf(norm(x)) >= 0) return x === "Castro" && temChiloe ? "Chiloé" : x;
   return "";
 }
 function cidadesViagem() {
