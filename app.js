@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, query, where,
-  onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, writeBatch, serverTimestamp, arrayUnion, arrayRemove }
+  onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, writeBatch, serverTimestamp, arrayUnion, arrayRemove, getDocs, Bytes }
   from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, GEMINI_MODEL, APPCHECK_SITE_KEY } from "./config.js";
 
@@ -31,7 +31,7 @@ async function getGemini() {
 /* ---------- estado ---------- */
 const S = { user: null, viagens: [], vid: null, info: null, itens: [], view: "tempo", fam: "", open: {}, carregou: false };
 try { S.view = localStorage.getItem("v-view") || "tempo"; } catch (e) {}
-let unsubViagens = null, unsubItens = null, unsubInfo = null;
+let unsubViagens = null, unsubItens = null, unsubInfo = null, unsubDocs = null;
 
 const $ = (id) => document.getElementById(id);
 const email = () => (S.user && S.user.email || "").toLowerCase();
@@ -50,6 +50,7 @@ const I = {
   pdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M12 17v-6M9 13.5l3-3 3 3"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.3"/></svg>',
+  foto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>',
   heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>',
   google: '<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>'
@@ -58,7 +59,7 @@ const NOME = { voo: "Voos", hosp: "Hospedagem", carro: "Carros", passeio: "Passe
 const TNOME = { voo: "Voo", hosp: "Hospedagem", carro: "Carro", passeio: "Passeio", rest: "Restaurante", nota: "Nota" };
 const CURTO = { voo: "voo", hosp: "hotel", carro: "carro", passeio: "passeio", rest: "restaurante", nota: "nota" };
 const PLUR = { voo: "voos", hosp: "hotéis", carro: "carros", passeio: "passeios", rest: "restaurantes", nota: "notas" };
-const VIEWS = [["tempo", "Roteiro"], ["passeios", "Passeios"], ["rest", "Restaurantes"], ["plan", "Planejar"], ["tudo", "Reservas"]];
+const VIEWS = [["tempo", "Roteiro"], ["passeios", "Passeios"], ["rest", "Restaurantes"], ["plan", "Planejar"], ["tudo", "Reservas"], ["docs", "Documentos"]];
 const ORDEM = ["voo", "hosp", "carro", "passeio", "rest", "nota"];
 const WD = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -74,7 +75,9 @@ function money(v, m) {
   return sym + " " + n.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 const familias = () => String(S.info && S.info.familias || "").split(",").map((s) => s.trim()).filter(Boolean);
-const okFam = (it) => !S.fam || it.familia === S.fam || it.familia === "Geral" || (it.divide || []).indexOf(S.fam) >= 0;
+const COMUNS = ["passeio", "rest", "nota"];
+const okFam = (it) => !S.fam || COMUNS.indexOf(it.tipo) >= 0 || !it.familia || it.familia === S.fam || it.familia === "Geral" || (it.divide || []).indexOf(S.fam) >= 0;
+const minhaFamilia = () => ((S.info && S.info.membrosFamilia) || {})[email()] || "";
 function toast(t) { const r = $("toastRoot"); r.innerHTML = '<div class="toast" role="status">' + esc(t) + "</div>"; clearTimeout(toast.t); toast.t = setTimeout(() => { r.innerHTML = ""; }, 2200); }
 function cidade(it) {
   const s = (it.titulo || "") + " " + (it.local || "");
@@ -368,7 +371,8 @@ function header() {
   st += ORDEM.filter((t) => c[t]).map((t) => c[t] + " " + (c[t] > 1 ? PLUR[t] : CURTO[t])).join(" · ") || "nada lançado";
   $("hStatus").innerHTML = st;
   const sel = $("fam");
-  if (document.activeElement !== sel) sel.innerHTML = '<option value="">Todas as famílias</option>' + familias().map((f) => "<option" + (f === S.fam ? " selected" : "") + ">" + esc(f) + "</option>").join("");
+  const meu = minhaFamilia();
+  if (document.activeElement !== sel) sel.innerHTML = '<option value="">Reservas de todos</option>' + familias().map((f) => '<option value="' + esc(f) + '"' + (f === S.fam ? " selected" : "") + ">" + esc(f) + (f === meu ? " (vocês)" : "") + "</option>").join("");
 }
 function render() {
   if (!$("out")) return;
@@ -376,12 +380,12 @@ function render() {
   if (S.arrastando) return;
   if (!VIEWS.some((v) => v[0] === S.view)) S.view = "tempo";
   document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === S.view)));
-  $("toggleAll").hidden = S.view === "plan";
+  $("toggleAll").hidden = S.view === "plan" || S.view === "docs";
   const lista = S.itens.filter(okFam);
   const out = $("out");
   out.className = S.view === "plan" ? "plan-out" : "";
   out.innerHTML = S.view === "tempo" ? renderTempo(lista) : S.view === "passeios" ? renderSug("passeio", lista)
-    : S.view === "rest" ? renderSug("rest", lista) : S.view === "plan" ? renderPlan(lista)
+    : S.view === "rest" ? renderSug("rest", lista) : S.view === "plan" ? renderPlan(lista) : S.view === "docs" ? renderDocs()
     : renderTudo(lista.filter((i) => ["voo", "hosp", "carro"].indexOf(i.tipo) >= 0 || i.codigo));
   if (S.view === "plan") ligarPlan();
   syncToggle();
@@ -406,21 +410,30 @@ function ouvirViagens() {
       if (S.viagens.length === 1 && !S.saiuDaViagem) return abrirViagem(S.viagens[0].id);
       return telaLista();
     }
-    S.info = S.viagens.find((v) => v.id === S.vid) || S.info; render();
+    S.info = S.viagens.find((v) => v.id === S.vid) || S.info;
+    if (S.famAuto && !S.fam && minhaFamilia()) S.fam = minhaFamilia();
+    render();
   }, (e) => { console.error(e); telaLogin("Não consegui abrir suas viagens. " + erroTexto(e)); });
 }
 function abrirViagem(id) {
   S.vid = id; S.info = S.viagens.find((v) => v.id === id) || null; S.itens = []; S.fam = ""; S.open = {};
-  try { S.fam = localStorage.getItem("v-fam-" + id) || ""; } catch (e) {}
+  let salvo = null; try { salvo = localStorage.getItem("v-fam-" + id); } catch (e) {}
+  S.fam = salvo !== null ? salvo : minhaFamilia();
+  S.famAuto = salvo === null;
   if (location.hash.slice(1) !== id) history.replaceState(null, "", "#" + encodeURIComponent(id));
   if (unsubItens) unsubItens();
   telaViagem();
+  if (unsubDocs) unsubDocs(); S.docs = [];
+  unsubDocs = onSnapshot(collection(db, "viagens", id, "docs"), (q) => {
+    S.docs = q.docs.map((d) => Object.assign({}, d.data(), { id: d.id })).filter((d) => d.pronto);
+    if (S.view === "docs") render();
+  }, (e) => { console.error(e); S.docsErro = e; if (S.view === "docs") render(); });
   unsubItens = onSnapshot(collection(db, "viagens", id, "itens"), (q) => {
     S.itens = q.docs.map((d) => Object.assign({}, d.data(), { id: d.id })); render();
   }, (e) => { console.error(e); toast(erroTexto(e)); });
 }
 function fecharViagem() {
-  if (unsubItens) unsubItens(); unsubItens = null; S.vid = null; S.info = null; S.itens = []; S.saiuDaViagem = true;
+  if (unsubItens) unsubItens(); unsubItens = null; if (unsubDocs) unsubDocs(); unsubDocs = null; S.vid = null; S.info = null; S.itens = []; S.saiuDaViagem = true;
   history.replaceState(null, "", location.pathname); telaLista();
 }
 const itensRef = () => collection(db, "viagens", S.vid, "itens");
@@ -468,7 +481,7 @@ function abrirEd(id, dia, tipo) {
   const it = old ? Object.assign({}, old) : { tipo: tipo || "passeio", sugeridoPor: email(), cidade: "", mapa: "", titulo: "", data: dia || "", hora: "", dataFim: "", horaFim: "", local: "", codigo: "", valor: 0, moeda: "CLP", status: "pendente", pago: false, link: "", obs: "", familia: "Geral" };
   ED = { it, novo: !old, busy: false, err: "", del: false }; drawEd();
 }
-function fecharSheet() { ED = null; UP = null; CFG = null; $("sheetRoot").innerHTML = ""; }
+function fecharSheet() { if (DOC && DOC.url) URL.revokeObjectURL(DOC.url); ED = null; UP = null; CFG = null; DOC = null; $("sheetRoot").innerHTML = ""; }
 
 /* ---------- envio de PDF (Gemini) ---------- */
 let UP = null;
@@ -583,8 +596,14 @@ function drawCfg() {
   h += fld("cCid", "Cidades, na ordem do roteiro (separadas por vírgula)", '<input id="cCid" name="cidades" placeholder="Ex.: Santiago, Pucón, Puerto Varas" value="' + esc(v.cidades || (nova ? "" : cidadesViagem().join(", "))) + '">', 1);
   h += fld("cPais", "País (ajuda o mapa a achar os lugares)", '<input id="cPais" name="pais" placeholder="Ex.: Chile" value="' + esc(v.pais) + '">', 1);
   h += fld("cViaj", "Quem vai", '<input id="cViaj" name="viajantes" value="' + esc(v.viajantes) + '">', 1);
-  h += fld("cMemb", "E-mails Google que podem ver e editar (um por linha)", '<textarea id="cMemb" name="membros" style="min-height:110px">' + esc((v.membros || [email()]).join("\n")) + "</textarea>", 1);
-  h += '<p class="hint full">Quem não estiver nesta lista não consegue abrir a viagem, nem com o link. O seu e-mail fica sempre na lista.</p>';
+  const famsCfg = String(v.familias || "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (!CFG.pessoas) { const mf = v.membrosFamilia || {}; CFG.pessoas = (v.membros || [email()]).map((e) => ({ email: e, familia: mf[e] || "" })); }
+  h += '<div class="sec full">Quem pode ver e editar</div><div class="pessoas full">' + CFG.pessoas.map((pp, i) =>
+    '<div class="pessoa"><input type="email" name="pEmail" aria-label="E-mail Google" placeholder="email@gmail.com" value="' + esc(pp.email) + '"' + (pp.email === email() ? " readonly" : "") + ">" +
+    '<select name="pFam" aria-label="Casal"><option value="">Casal…</option>' + famsCfg.map((f) => "<option" + (f === pp.familia ? " selected" : "") + ">" + esc(f) + "</option>").join("") + "</select>" +
+    (pp.email === email() ? '<span class="pvoce">você</span>' : '<button type="button" class="prm" data-prm="' + i + '" aria-label="Tirar">×</button>') + "</div>").join("") + "</div>" +
+    '<button type="button" class="up full" id="addPessoa" style="justify-self:start">' + I.plus + "Adicionar pessoa</button>" +
+    '<p class="hint full">Use o e-mail da conta Google de cada um. O site abre já mostrando as reservas do casal da pessoa. Quem não estiver aqui não abre a viagem, nem com o link.</p>';
   if (!nova) {
     h += '<div class="sec full">Importar dados</div><div class="pick full"><b>Escolher arquivo .json</b>Arquivo de importação com itens da viagem (por exemplo, o que veio do Claude).<input type="file" id="cImp" accept="application/json,.json"></div>';
     if (CFG.imp) h += '<p class="hint full">' + esc(CFG.imp) + "</p>";
@@ -597,16 +616,20 @@ function drawCfg() {
 function readCfg() {
   const f = $("cfgForm"); const v = CFG.v;
   ["nome", "inicio", "fim", "familias", "viajantes", "cidades", "pais"].forEach((k) => { v[k] = f.elements[k].value.trim(); });
-  const m = f.elements.membros.value.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
-  if (m.indexOf(email()) < 0) m.unshift(email());
-  v.membros = Array.from(new Set(m));
+  const es = Array.from(f.querySelectorAll('[name="pEmail"]')), fs = Array.from(f.querySelectorAll('[name="pFam"]'));
+  CFG.pessoas = es.map((el, i) => ({ email: el.value.trim().toLowerCase(), familia: fs[i] ? fs[i].value : "" }));
+  const ok = CFG.pessoas.filter((pp) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(pp.email));
+  if (!ok.some((pp) => pp.email === email())) ok.unshift({ email: email(), familia: "" });
+  const mf = {}; ok.forEach((pp) => { if (pp.familia) mf[pp.email] = pp.familia; });
+  v.membros = Array.from(new Set(ok.map((pp) => pp.email)));
+  v.membrosFamilia = mf;
 }
 async function salvarCfg() {
   readCfg(); const v = CFG.v;
   if (!v.nome) { CFG.err = "Dê um nome à viagem."; drawCfg(); return; }
   if (v.inicio && v.fim && v.fim < v.inicio) { CFG.err = "A volta está antes da ida."; drawCfg(); return; }
   CFG.busy = true; CFG.err = ""; drawCfg();
-  const dados = { nome: v.nome, inicio: v.inicio, fim: v.fim, familias: v.familias, viajantes: v.viajantes, cidades: v.cidades || "", pais: v.pais || "", membros: v.membros };
+  const dados = { nome: v.nome, inicio: v.inicio, fim: v.fim, familias: v.familias, viajantes: v.viajantes, cidades: v.cidades || "", pais: v.pais || "", membros: v.membros, membrosFamilia: v.membrosFamilia || {} };
   try {
     if (CFG.nova) {
       const ref = await addDoc(collection(db, "viagens"), Object.assign(dados, { dono: email(), criadoEm: serverTimestamp() }));
@@ -636,6 +659,112 @@ async function importar(file) {
   }
 }
 
+
+/* ---------- documentos (guardados em partes no Firestore) ---------- */
+const CATS_DOC = ["Seguro viagem", "Passaportes e documentos", "Reservas e vouchers", "Saúde", "Outros"];
+const PARTE = 900 * 1024;
+const LIMITE_DOC = 15 * 1024 * 1024;
+const tamanho = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
+const docsRef = () => collection(db, "viagens", S.vid, "docs");
+function renderDocs() {
+  let h = '<div class="sughead"><p class="hint">Apólice do seguro, passaportes, vouchers. Só quem está na lista da viagem consegue abrir.</p>' +
+    '<button class="up" id="docNovo">' + I.plus + "Guardar documento</button></div>";
+  if (S.docsErro && !S.docs.length) return h + '<div class="empty"><h3>Não consegui abrir os documentos</h3>' + esc(erroTexto(S.docsErro)) + " Se você acabou de ganhar esta aba, falta atualizar as regras do Firestore.</div>";
+  const ds = S.docs.filter((d) => !S.fam || !d.familia || d.familia === "Geral" || d.familia === S.fam);
+  if (!ds.length) return h + '<div class="empty"><h3>Nenhum documento guardado</h3>Toque em Guardar documento e escolha um PDF ou uma foto.</div>';
+  CATS_DOC.concat(ds.map((d) => d.categoria).filter((c) => CATS_DOC.indexOf(c) < 0)).forEach((cat) => {
+    const g = ds.filter((d) => (d.categoria || "Outros") === cat).sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+    if (!g.length) return;
+    h += '<div class="group"><h2>' + esc(cat) + "</h2><span>" + g.length + '</span></div><div class="list">' + g.map((d) =>
+      '<button type="button" class="doc" data-doc="' + esc(d.id) + '"><span class="ico">' + (/^image\//.test(d.mime) ? I.foto : I.nota) + '</span><span class="imain"><div class="ititle">' + esc(d.nome) +
+      '</div><div class="imeta">' + esc([d.familia && d.familia !== "Geral" ? d.familia : "Grupo todo", tamanho(d.tamanho || 0), d.enviadoPor ? "por " + nomeDe(d.enviadoPor) : ""].filter(Boolean).join(" · ")) + "</div></span></button>").join("") + "</div>";
+  });
+  return h;
+}
+let DOC = null;
+function drawDoc() {
+  const d = DOC;
+  let h = '<div class="overlay" data-close="1"><div class="sheet" role="dialog" aria-modal="true">';
+  if (d.modo === "novo") {
+    h += '<h2>Guardar documento</h2><form id="docForm" class="fgrid">';
+    h += '<div class="pick full"><b>' + (d.file ? esc(d.file.name) : "Escolher PDF ou foto") + "</b>" + (d.file ? tamanho(d.file.size) + " · toque para trocar" : "Até 15 MB. Fotos grandes são reduzidas automaticamente.") +
+      '<input type="file" id="docFile" accept="application/pdf,image/*"' + (d.busy ? " disabled" : "") + "></div>";
+    h += fld("dNome", "Nome", '<input id="dNome" name="nome" required placeholder="Ex.: Apólice do seguro — Thiago e Luana" value="' + esc(d.nome) + '">', 1);
+    h += fld("dCat", "Categoria", '<select id="dCat" name="categoria">' + CATS_DOC.map((c) => "<option" + (c === d.categoria ? " selected" : "") + ">" + c + "</option>").join("") + "</select>");
+    h += fld("dFam", "De quem", '<select id="dFam" name="familia"><option value="Geral">Grupo todo</option>' + familias().map((f) => "<option" + (f === d.familia ? " selected" : "") + ">" + esc(f) + "</option>").join("") + "</select>");
+    if (d.err) h += '<div class="msg full">' + esc(d.err) + "</div>";
+    h += '<div class="acts full"><span class="hint">' + (d.busy ? esc(d.fase || "Enviando…") : "") + '</span><div class="r"><button type="button" class="btn ghost" data-close="1">Fechar</button><button type="submit" class="btn"' + (d.busy || !d.file ? " disabled" : "") + ">" + (d.busy ? "Guardando…" : "Guardar") + "</button></div></div></form>";
+  } else {
+    const m = d.meta;
+    h += "<h2>" + esc(m.nome) + '</h2><p class="hint">' + esc([m.categoria, m.familia && m.familia !== "Geral" ? m.familia : "Grupo todo", tamanho(m.tamanho || 0), m.enviadoPor ? "guardado por " + nomeDe(m.enviadoPor) : ""].filter(Boolean).join(" · ")) + "</p>";
+    if (d.url) {
+      if (/^image\//.test(m.mime)) h += '<img class="docprev" src="' + d.url + '" alt="">';
+      h += '<div class="btns"><a class="map" href="' + d.url + '" target="_blank" rel="noopener">Abrir</a><a href="' + d.url + '" download="' + esc(m.arquivo || m.nome) + '">Baixar</a></div>';
+      h += '<p class="hint">Depois de aberto uma vez, o documento fica guardado neste aparelho e abre mesmo sem internet.</p>';
+    } else if (!d.err) h += '<p class="status">Carregando o arquivo…</p>';
+    if (d.err) h += '<div class="msg">' + esc(d.err) + "</div>";
+    if (d.del) h += '<div class="msg">Excluir este documento para todo mundo?<div class="acts" style="margin-top:8px"><div class="r"><button type="button" class="btn ghost" id="docDelNao">Cancelar</button><button type="button" class="btn" id="docDelSim">Excluir</button></div></div></div>';
+    h += '<div class="acts"><button type="button" class="btn danger" id="docDel"' + (d.busy ? " disabled" : "") + '>Excluir</button><div class="r"><button type="button" class="btn ghost" data-close="1">Fechar</button></div></div>';
+  }
+  $("sheetRoot").innerHTML = h + "</div></div>";
+}
+async function reduzirFoto(file) {
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(file.type) || file.size < 1.5 * 1048576) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 2200 / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement("canvas"); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+    cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+    const blob = await new Promise((ok) => cv.toBlob(ok, "image/jpeg", 0.85));
+    return blob && blob.size < file.size ? new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : file;
+  } catch (e) { return file; }
+}
+async function guardarDoc() {
+  const f = $("docForm"), d = DOC;
+  d.nome = f.elements.nome.value.trim(); d.categoria = f.elements.categoria.value; d.familia = f.elements.familia.value;
+  if (!d.nome) { d.err = "Dê um nome ao documento."; return drawDoc(); }
+  d.busy = true; d.err = ""; d.fase = "Preparando o arquivo…"; drawDoc();
+  try {
+    const arq = await reduzirFoto(d.file);
+    if (arq.size > LIMITE_DOC) throw { code: "grande" };
+    const bytes = new Uint8Array(await arq.arrayBuffer());
+    const id = (slug(d.nome) || "doc") + "-" + Date.now().toString(36).slice(-5);
+    const n = Math.max(1, Math.ceil(bytes.length / PARTE));
+    for (let i = 0; i < n; i++) {
+      d.fase = "Enviando " + (n > 1 ? "parte " + (i + 1) + " de " + n : "o arquivo") + "…"; drawDoc();
+      await setDoc(doc(db, "viagens", S.vid, "docs", id, "partes", "p" + String(i).padStart(3, "0")), { dados: Bytes.fromUint8Array(bytes.subarray(i * PARTE, (i + 1) * PARTE)) });
+    }
+    await setDoc(doc(docsRef(), id), { nome: d.nome, categoria: d.categoria, familia: d.familia, arquivo: arq.name, mime: arq.type || "application/octet-stream",
+      tamanho: bytes.length, partes: n, pronto: true, enviadoPor: email(), criadoEm: serverTimestamp() });
+    fecharSheet(); toast("Documento guardado");
+  } catch (e) {
+    console.error(e); if (!DOC) return; d.busy = false;
+    d.err = e && e.code === "grande" ? "Arquivo grande demais (máximo 15 MB). Envie só as páginas que importam." : erroTexto(e) + " Se for a primeira vez, confira se as regras novas do Firestore foram publicadas.";
+    drawDoc();
+  }
+}
+async function abrirDoc(id) {
+  const meta = S.docs.find((x) => x.id === id); if (!meta) return;
+  DOC = { modo: "ver", meta, url: "", err: "", busy: false, del: false }; drawDoc();
+  try {
+    const q = await getDocs(collection(db, "viagens", S.vid, "docs", id, "partes"));
+    const partes = q.docs.slice().sort((a, b) => a.id.localeCompare(b.id)).map((x) => x.data().dados.toUint8Array());
+    if (partes.length < (meta.partes || 1)) throw { code: "incompleto" };
+    if (!DOC || DOC.meta.id !== id) return;
+    DOC.url = URL.createObjectURL(new Blob(partes, { type: meta.mime || "application/octet-stream" }));
+  } catch (e) { console.error(e); if (!DOC) return; DOC.err = e && e.code === "incompleto" ? "O arquivo está incompleto. Guarde de novo." : erroTexto(e).replace("salvar", "abrir"); }
+  drawDoc();
+}
+async function excluirDoc() {
+  const id = DOC.meta.id; DOC.busy = true; drawDoc();
+  try {
+    await deleteDoc(doc(docsRef(), id));
+    const q = await getDocs(collection(db, "viagens", S.vid, "docs", id, "partes"));
+    await Promise.all(q.docs.map((x) => deleteDoc(x.ref)));
+    fecharSheet(); toast("Documento excluído");
+  } catch (e) { console.error(e); if (!DOC) return; DOC.busy = false; DOC.del = false; DOC.err = erroTexto(e); drawDoc(); }
+}
+
 /* ---------- eventos ---------- */
 document.addEventListener("toggle", (e) => { const k = e.target.dataset && e.target.dataset.k; if (k) { S.open[k] = e.target.open; syncToggle(); } }, true);
 document.addEventListener("click", async (e) => {
@@ -653,6 +782,8 @@ document.addEventListener("click", async (e) => {
   if (c("#voltarBtn")) return fecharViagem();
   if (c("#novaViagem")) { CFG = { nova: true, v: { nome: "", inicio: "", fim: "", familias: "", viajantes: "", membros: [email()] }, busy: false, err: "" }; return drawCfg(); }
   if (c("#cfgBtn")) { CFG = { nova: false, v: Object.assign({}, S.info), busy: false, err: "" }; return drawCfg(); }
+  if (CFG && c("#addPessoa")) { readCfg(); CFG.pessoas.push({ email: "", familia: "" }); drawCfg(); const ins = document.querySelectorAll('[name="pEmail"]'); if (ins.length) ins[ins.length - 1].focus(); return; }
+  const prm = c("[data-prm]"); if (CFG && prm) { readCfg(); CFG.pessoas.splice(+prm.dataset.prm, 1); return drawCfg(); }
   const vw = c("[data-view]");
   if (vw) { S.view = vw.dataset.view; try { localStorage.setItem("v-view", S.view); } catch (x) {} window.scrollTo(0, 0); return render(); }
   const sg = c("[data-sugerir]"); if (sg) return abrirEd(null, "", sg.dataset.sugerir);
@@ -673,10 +804,15 @@ document.addEventListener("click", async (e) => {
   const ed = c("[data-edit]"); if (ed) return abrirEd(ed.dataset.edit);
   const ad = c("[data-addday]"); if (ad) return abrirEd(null, ad.dataset.addday);
   if (c("#addBtn")) return abrirEd(null);
+  if (c("#docNovo")) { DOC = { modo: "novo", file: null, nome: "", categoria: CATS_DOC[0], familia: minhaFamilia() || "Geral", busy: false, err: "" }; return drawDoc(); }
+  const dd = c("[data-doc]"); if (dd) return abrirDoc(dd.dataset.doc);
+  if (DOC && t.id === "docDel") { DOC.del = true; return drawDoc(); }
+  if (DOC && t.id === "docDelNao") { DOC.del = false; return drawDoc(); }
+  if (DOC && t.id === "docDelSim") return excluirDoc();
   if (c("#upBtn")) { UP = { files: [], nota: "", busy: false, err: "", props: null, sel: [] }; return drawUp(); }
 
   if (t.dataset && t.dataset.close && (t.classList.contains("overlay") ? e.target === t : true)) {
-    if ((ED && ED.busy) || (UP && UP.busy) || (CFG && CFG.busy)) return; return fecharSheet();
+    if ((ED && ED.busy) || (UP && UP.busy) || (CFG && CFG.busy) || (DOC && DOC.busy)) return; return fecharSheet();
   }
   if (ED) {
     if (t.id === "eDel") { readEd(); ED.del = true; return drawEd(); }
@@ -697,15 +833,24 @@ document.addEventListener("click", async (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target;
   if (t.id === "planCidade") { S.planCidade = t.value; return render(); }
-  if (t.id === "fam") { S.fam = t.value; try { localStorage.setItem("v-fam-" + S.vid, S.fam); } catch (x) {} t.blur(); return render(); }
+  if (t.id === "fam") { S.famAuto = false; S.fam = t.value; try { localStorage.setItem("v-fam-" + S.vid, S.fam); } catch (x) {} t.blur(); return render(); }
   if (ED && t.id === "eTipo") { readEd(); return drawEd(); }
+  if (DOC && t.id === "docFile" && t.files && t.files[0]) {
+    const f = $("docForm"); DOC.nome = f.elements.nome.value.trim(); DOC.categoria = f.elements.categoria.value; DOC.familia = f.elements.familia.value;
+    DOC.file = t.files[0]; DOC.err = "";
+    if (!DOC.nome) DOC.nome = DOC.file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+    if (/seguro|ap[oó]lice|assist/i.test(DOC.file.name)) DOC.categoria = "Seguro viagem";
+    return drawDoc();
+  }
   if (UP && t.id === "upFile") { lerNota(); UP.files = UP.files.concat(Array.from(t.files || [])).slice(0, 6); UP.err = ""; return drawUp(); }
   if (UP && t.dataset && t.dataset.pi != null) { UP.sel[+t.dataset.pi] = t.checked; return drawUp(); }
+ if (CFG && t.id === "cFam") { readCfg(); return drawCfg(); }
   if (CFG && t.id === "cImp" && t.files && t.files[0]) { CFG.imp = "Importando…"; const f = t.files[0]; readCfg(); drawCfg(); return importar(f); }
 });
 document.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (CFG && e.target.id === "cfgForm") return salvarCfg();
+  if (DOC && e.target.id === "docForm") return guardarDoc();
   if (!ED || e.target.id !== "edForm") return;
   readEd(); const it = ED.it;
   if (!it.titulo) { ED.err = "Dê um nome ao item."; return drawEd(); }
@@ -724,6 +869,7 @@ onAuthStateChanged(auth, (u) => {
   S.user = u;
   if (unsubViagens) { unsubViagens(); unsubViagens = null; }
   if (unsubItens) { unsubItens(); unsubItens = null; }
+  if (unsubDocs) { unsubDocs(); unsubDocs = null; }
   S.vid = null; S.viagens = []; S.itens = [];
   if (!u) return telaLogin();
   telaLista(); ouvirViagens();

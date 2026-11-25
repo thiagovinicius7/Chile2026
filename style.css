@@ -216,3 +216,14 @@ body.no-login{background:radial-gradient(120% 70% at 50% 0%,var(--creme) 0%,var(
   @keyframes selo{from{transform:scale(.92) rotate(-6deg);opacity:0}}
   @keyframes sobe{from{transform:translateY(8px);opacity:0}}
 }
+
+/* ---- pessoas e documentos ---- */
+.pessoas{display:flex;flex-direction:column;gap:8px}
+.pessoa{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 34px;gap:6px;align-items:center}
+.pessoa input[readonly]{opacity:.75}
+.pvoce{font-size:12px;color:var(--muted);text-align:center}
+.prm{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:8px;height:34px;font-size:18px;line-height:1}
+@media (max-width:420px){.pessoa{grid-template-columns:minmax(0,1fr) 34px}.pessoa select{grid-column:1;grid-row:2}.pessoa .prm,.pessoa .pvoce{grid-row:1/3;grid-column:2}}
+.doc{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;text-align:left;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--ink)}
+.t-doc .ico,.doc .ico{background:var(--lake-soft);color:var(--lake)}
+.docprev{width:100%;max-height:50vh;object-fit:contain;border-radius:10px;background:var(--bg)}

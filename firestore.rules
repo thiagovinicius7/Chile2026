@@ -16,19 +16,27 @@ service cloud.firestore {
     // Cada viagem guarda a lista de e-mails que podem ver e editar (campo "membros").
     match /viagens/{viagemId} {
       allow read: if logado() && meuEmail() in resource.data.membros;
-      // Qualquer pessoa logada cria uma viagem, desde que se coloque na lista e como dona.
       allow create: if logado()
         && meuEmail() in request.resource.data.membros
         && request.resource.data.dono == meuEmail();
-      // Membros editam; ninguém tira o próprio e-mail nem troca a dona.
       allow update: if logado()
         && meuEmail() in resource.data.membros
         && meuEmail() in request.resource.data.membros
         && request.resource.data.dono == resource.data.dono;
       allow delete: if logado() && resource.data.dono == meuEmail();
 
+      // Itens do roteiro.
       match /itens/{itemId} {
         allow read, write: if membroDe(viagemId);
+      }
+
+      // Documentos (seguro, passaportes...) e as partes de cada arquivo.
+      match /docs/{docId} {
+        allow read, write: if membroDe(viagemId);
+        match /partes/{parteId} {
+          allow read, write: if membroDe(viagemId)
+            && (request.resource == null || request.resource.data.dados.size() <= 1000000);
+        }
       }
     }
   }
