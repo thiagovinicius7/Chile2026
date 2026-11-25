@@ -4,7 +4,7 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRe
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, query, where,
   onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, writeBatch, serverTimestamp, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
-import { firebaseConfig, GEMINI_MODEL } from "./config.js";
+import { firebaseConfig, GEMINI_MODEL, APPCHECK_SITE_KEY } from "./config.js";
 
 /* ---------- Firebase ---------- */
 const fb = initializeApp(firebaseConfig);
@@ -12,9 +12,16 @@ const auth = getAuth(fb);
 let db;
 try { db = initializeFirestore(fb, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
 catch (e) { db = initializeFirestore(fb, {}); }
-let gemini = null; // carregado só quando alguém envia um PDF
+let gemini = null, appCheckPronto = null; // carregados só quando alguém envia um PDF
+async function ligarAppCheck() {
+  if (!APPCHECK_SITE_KEY) return;
+  if (!appCheckPronto) appCheckPronto = import("https://www.gstatic.com/firebasejs/11.10.0/firebase-app-check.js")
+    .then((m) => m.initializeAppCheck(fb, { provider: new m.ReCaptchaEnterpriseProvider(APPCHECK_SITE_KEY), isTokenAutoRefreshEnabled: true }));
+  return appCheckPronto;
+}
 async function getGemini() {
   if (gemini) return gemini;
+  await ligarAppCheck();
   const m = await import("https://www.gstatic.com/firebasejs/11.10.0/firebase-ai.js");
   const ai = m.getAI(fb, { backend: new m.GoogleAIBackend() });
   gemini = m.getGenerativeModel(ai, { model: GEMINI_MODEL, generationConfig: { responseMimeType: "application/json" } });
@@ -72,7 +79,7 @@ function toast(t) { const r = $("toastRoot"); r.innerHTML = '<div class="toast" 
 function cidade(it) {
   const s = (it.titulo || "") + " " + (it.local || "");
   const c = (S.info && S.info.cidades) || ["Santiago", "Temuco", "Pucón", "Puerto Varas", "Castro", "Chiloé"];
-  for (const x of c) if (s.indexOf(x) >= 0) return x === "Chiloé" ? "Castro" : x;
+  for (const x of c) if (s.indexOf(x) >= 0) return x === "Castro" ? "Chiloé" : x;
   return "";
 }
 function cidadesViagem() {
@@ -457,7 +464,7 @@ function drawUp() {
     h += '<div class="pick"><b>Escolher PDF ou print</b>E-mail da companhia aérea, reserva do Booking ou Airbnb, voucher de passeio.<input type="file" id="upFile" multiple accept="application/pdf,image/jpeg,image/png,image/webp"' + (b.busy ? " disabled" : "") + "></div>";
     if (b.files.length) h += '<div class="files">' + b.files.map((f, i) => "<span>" + esc(f.name) + (b.busy ? "" : '<button type="button" data-rm="' + i + '">Tirar</button>') + "</span>").join("") + "</div>";
     h += '<label class="f" for="upNota">Algo a acrescentar? (opcional)<textarea id="upNota" placeholder="Ex.: essa reserva é só do Rodrigo e da Carol"' + (b.busy ? " disabled" : "") + ">" + esc(b.nota) + "</textarea></label>";
-    if (b.err) h += '<div class="msg">' + esc(b.err) + "</div>";
+    if (b.err) h += '<div class="msg">' + esc(b.err) + (b.errTec ? '<div class="hint" style="margin-top:6px;overflow-wrap:anywhere">Detalhe técnico: ' + esc(b.errTec) + "</div>" : "") + "</div>";
     h += '<div class="acts"><span class="hint">' + (b.busy ? "Lendo a confirmação, pode levar até um minuto…" : "Nada entra na viagem antes de você conferir.") + '</span><div class="r"><button type="button" class="btn ghost" data-close="1">Fechar</button><button type="button" class="btn" id="upGo"' + (b.busy || !b.files.length ? " disabled" : "") + ">" + (b.busy ? "Lendo…" : "Ler confirmação") + "</button></div></div>";
   } else {
     const n = b.sel.filter(Boolean).length;
@@ -482,7 +489,7 @@ function paraBase64(file) {
   return new Promise((ok, err) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = err; r.readAsDataURL(file); });
 }
 async function organizar() {
-  lerNota(); const b = UP; b.busy = true; b.err = ""; drawUp();
+  lerNota(); const b = UP; b.busy = true; b.err = ""; b.errTec = ""; drawUp();
   try {
     if (b.files.some((f) => f.size > 18 * 1024 * 1024)) throw { code: "grande" };
     const partes = [];
@@ -493,7 +500,7 @@ async function organizar() {
     }
     const inf = S.info || {};
     const exist = S.itens.map((x) => JSON.stringify({ id: x.id, tipo: x.tipo, titulo: x.titulo, data: x.data, codigo: x.codigo || "", familia: x.familia || "" })).join("\n");
-    const prompt = "Você organiza uma viagem em grupo (" + (inf.nome || "") + ", " + (inf.inicio || "") + " a " + (inf.fim || "") + "). Leia os arquivos anexos (confirmações de reserva) e extraia cada reserva como um item.\n" +
+    const prompt = "Você organiza uma viagem em grupo (" + (inf.nome || "") + ", " + (inf.inicio || "") + " a " + (inf.fim || "") + "). Leia os arquivos anexos. Eles podem ser confirmações de reserva (voo, hotel, carro, passeio) ou listas de sugestões de passeios e restaurantes. Extraia cada reserva ou cada lugar sugerido como um item. Numa lista de sugestões, cada lugar é um item sem data (data vazia), com a cidade preenchida, tipo rest para restaurantes, cafés, mercados e compras, e tipo passeio para atrações e atividades; status confirmado = false.\n" +
       "Tipos: voo (cada trecho é um item), hosp (hospedagem), carro (aluguel), passeio, rest (restaurante), nota (outro).\n" +
       'Responda só com JSON: {"itens":[{"substitui":"id de um item existente que esta confirmação atualiza, ou vazio","tipo":"","titulo":"curto em português, ex.: LATAM LA8108 Brasília → Santiago","data":"AAAA-MM-DD","hora":"HH:MM","dataFim":"AAAA-MM-DD","horaFim":"HH:MM","local":"","codigo":"","valor":0,"moeda":"BRL|CLP|USD","confirmado":true,"pago":false,"link":"","obs":"","familia":"Geral","cidade":""}]}\n' +
       "Regras: data/hora = partida do voo, check-in, retirada do carro ou horário do passeio; dataFim/horaFim = chegada, check-out ou devolução. local = aeroportos (ex.: BSB → SCL) ou endereço · telefone. codigo = localizador ou nº da reserva, com o PIN se houver (ex.: 1234567 (PIN 1234)). valor = total na moeda original, número sem separador de milhar. obs = detalhes úteis e curtos: quartos, passageiros, forma de pagamento, política de cancelamento, quem reservou. familia = Geral se for do grupo todo; senão um destes: " + familias().join(", ") + ". cidade = uma destas, se der para saber: " + cidadesViagem().join(", ") + ". Use substitui quando o código de reserva ou o mesmo voo/hotel já existir na lista. Nunca invente horários, valores ou códigos: deixe vazio ou 0.\n" +
@@ -532,8 +539,11 @@ async function organizar() {
       : c === "tipo" ? "Use PDF, JPG ou PNG."
       : c === "json" ? "A resposta veio incompleta. Tente com um arquivo por vez."
       : /quota|429|exhausted/i.test(m) ? "O limite gratuito do Gemini acabou por agora. Tente de novo mais tarde."
-      : /api-not-enabled|not been used|disabled/i.test(m) ? "A leitura de PDF ainda não foi ligada no Firebase (Firebase AI Logic)."
+      : /app.?check|appcheck/i.test(m + c) ? "O Firebase recusou o pedido por causa do App Check (proteção extra do Gemini). É preciso desligar a exigência ou configurar a chave."
+      : /api-not-enabled|not been used|has not been enabled|disabled/i.test(m) ? "A leitura de PDF ainda não foi ligada no Firebase (Firebase AI Logic)."
+      : /not found|is not supported|404/i.test(m) ? "O modelo do Gemini configurado não foi encontrado."
       : "Não deu para ler agora. Tente de novo em instantes.";
+    b.errTec = (c ? c + ": " : "") + m.slice(0, 300);
     drawUp();
   }
 }

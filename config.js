@@ -11,3 +11,7 @@ export const firebaseConfig = {
 
 // Modelo do Gemini usado para ler PDFs e prints de confirmação.
 export const GEMINI_MODEL = "gemini-2.5-flash";
+
+// Chave do reCAPTCHA Enterprise para o App Check (proteção extra do Gemini).
+// Vazia = App Check desligado no site.
+export const APPCHECK_SITE_KEY = "";
