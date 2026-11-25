@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, query, where,
-  onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, writeBatch, serverTimestamp }
+  onSnapshot, setDoc, updateDoc, deleteDoc, addDoc, writeBatch, serverTimestamp, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, GEMINI_MODEL } from "./config.js";
 
@@ -42,6 +42,8 @@ const I = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   pdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M12 17v-6M9 13.5l3-3 3 3"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.3"/></svg>',
+  heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>',
   google: '<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>'
 };
@@ -49,6 +51,7 @@ const NOME = { voo: "Voos", hosp: "Hospedagem", carro: "Carros", passeio: "Passe
 const TNOME = { voo: "Voo", hosp: "Hospedagem", carro: "Carro", passeio: "Passeio", rest: "Restaurante", nota: "Nota" };
 const CURTO = { voo: "voo", hosp: "hotel", carro: "carro", passeio: "passeio", rest: "restaurante", nota: "nota" };
 const PLUR = { voo: "voos", hosp: "hotéis", carro: "carros", passeio: "passeios", rest: "restaurantes", nota: "notas" };
+const VIEWS = [["tempo", "Roteiro"], ["passeios", "Passeios"], ["rest", "Restaurantes"], ["plan", "Planejar"], ["tudo", "Reservas"]];
 const ORDEM = ["voo", "hosp", "carro", "passeio", "rest", "nota"];
 const WD = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -71,6 +74,48 @@ function cidade(it) {
   const c = (S.info && S.info.cidades) || ["Santiago", "Temuco", "Pucón", "Puerto Varas", "Castro", "Chiloé"];
   for (const x of c) if (s.indexOf(x) >= 0) return x === "Chiloé" ? "Castro" : x;
   return "";
+}
+function cidadesViagem() {
+  const fixas = String(S.info && S.info.cidades || "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (fixas.length) return fixas;
+  const vistas = [];
+  S.itens.slice().sort((a, b) => (a.data || "9").localeCompare(b.data || "9")).forEach((it) => { const c = itemCidade(it); if (c && vistas.indexOf(c) < 0) vistas.push(c); });
+  return vistas;
+}
+const itemCidade = (it) => it.cidade || cidade(it);
+const nomeDe = (e) => { const n = String(e || "").split("@")[0].replace(/[._]+/g, " "); return n.charAt(0).toUpperCase() + n.slice(1); };
+const mapsUrl = (q) => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+const rotaUrl = (q) => "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(q);
+// Lugares de um item: endereço(s), aeroportos do trecho, ou o link de mapa colado.
+function lugares(it) {
+  const c = itemCidade(it), pais = (S.info && S.info.pais) || "";
+  if (it.tipo === "voo") {
+    return String(it.local || "").split("→").map((x) => x.trim()).filter((x) => /^[A-Z]{3}$/.test(x))
+      .map((code, i) => ({ lbl: (i ? "Chegada " : "Saída ") + code, q: "Aeroporto " + code }));
+  }
+  const out = [];
+  String(it.local || "").split("→").forEach((parte) => {
+    let lbl = "", m = parte.match(/^\s*(Retirada|Devolução)\s*:\s*/i);
+    if (m) { lbl = m[1]; parte = parte.slice(m[0].length); }
+    let q = parte.split("·")[0].trim();
+    if (!q) return;
+    if (it.titulo && q.length < 25 && q.indexOf(it.titulo) < 0 && (it.tipo === "rest" || it.tipo === "passeio")) q = it.titulo + ", " + q;
+    if (c && q.indexOf(c) < 0) q += ", " + c;
+    if (pais && q.indexOf(pais) < 0) q += ", " + pais;
+    out.push({ lbl, q });
+  });
+  if (!out.length && it.titulo && (it.tipo === "rest" || it.tipo === "passeio" || it.tipo === "hosp")) out.push({ lbl: "", q: it.titulo + (c ? ", " + c : "") + (pais ? ", " + pais : "") });
+  return out;
+}
+function mapaBtns(it) {
+  let h = "";
+  if (it.mapa) h += '<a class="map" target="_blank" rel="noopener" href="' + esc(it.mapa) + '">' + I.pin + "Ver no mapa</a>";
+  lugares(it).forEach((l, i) => {
+    if (it.mapa && i === 0 && !l.lbl) return;
+    h += '<a class="map" target="_blank" rel="noopener" href="' + esc(mapsUrl(l.q)) + '">' + I.pin + esc(l.lbl || "Ver no mapa") + "</a>";
+    if (it.tipo !== "voo") h += '<a target="_blank" rel="noopener" href="' + esc(rotaUrl(l.q)) + '">Como chegar</a>';
+  });
+  return h;
 }
 const slug = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 const novoId = (it) => (slug(it.tipo + "-" + it.titulo) || "item") + "-" + Date.now().toString(36).slice(-5);
@@ -102,7 +147,8 @@ function telaViagem() {
     '<button class="mini" id="cfgBtn">' + I.gear + "Viagem</button></span></div>" +
     '<h1 id="hName"></h1><span class="status" id="hStatus"></span>' +
     '<div class="ridge" aria-hidden="true"><svg viewBox="0 0 400 24" preserveAspectRatio="none"><path fill="currentColor" opacity=".2" d="M0 24 L0 17 L30 10 L52 15 L80 3 L104 13 L130 7 L158 17 L186 5 L205 11 L232 1 L262 14 L290 8 L318 16 L346 6 L372 12 L400 7 L400 24 Z"/></svg></div></header>' +
-    '<div class="bar"><div class="seg" role="group" aria-label="Visão"><button id="vTempo">Linha do tempo</button><button id="vTudo">Tudo</button></div>' +
+    '<nav class="tabs" aria-label="Seções">' + VIEWS.map((v) => '<button data-view="' + v[0] + '">' + v[1] + "</button>").join("") + "</nav>" +
+    '<div class="bar">' +
     '<select id="fam" aria-label="Família"></select><button class="link" id="toggleAll">Abrir todos</button>' +
     '<span style="display:inline-flex;gap:6px;flex-wrap:wrap"><button class="up" id="addBtn">' + I.plus + 'Adicionar</button><button class="up" id="upBtn" title="PDF ou print de voo, hotel, carro ou passeio">' + I.pdf + "Enviar PDF</button></span></div>" +
     '<main id="out"></main>';
@@ -115,7 +161,10 @@ function itemHTML(it, extra) {
   const key = it.id + (extra ? "|" + extra.k : "");
   const meta = [];
   if (extra && extra.label) meta.push(extra.label);
+  if ((it.tipo === "passeio" || it.tipo === "rest") && extra && extra.k === "sug") meta.push(it.data ? "No roteiro: " + fdt(it.data) : "Ainda sem dia");
+  else if (it.tipo === "passeio" || it.tipo === "rest") { const c = itemCidade(it); if (c && !(extra && extra.label)) meta.push(c); }
   meta.push(it.familia && it.familia !== "Geral" ? it.familia : "Grupo todo");
+  if (it.sugeridoPor) meta.push("sugestão de " + nomeDe(it.sugeridoPor));
   const hora = extra ? extra.hora : it.hora || "";
   const det = [];
   if (it.tipo === "hosp") { det.push(["Check-in", fdt(it.data) + (it.hora ? " · " + it.hora : "")]); det.push(["Check-out", fdt(it.dataFim) + (it.horaFim ? " · " + it.horaFim : "")]); }
@@ -127,13 +176,16 @@ function itemHTML(it, extra) {
   const st = (it.status === "confirmado" ? '<span class="pill ok">Confirmado</span>' : '<span class="pill pend">A confirmar</span>') +
     (it.pago ? '<span class="pill ok">Pago</span>' : it.valor ? '<span class="pill pend">A pagar</span>' : "");
   det.push(["Situação", st]);
-  const mapQ = it.local && it.tipo !== "voo" ? it.local.split("·")[0].split("→")[0].replace(/^Retirada:\s*/, "").trim() : "";
-  let btns = '<button data-edit="' + esc(it.id) + '">Editar</button>';
-  if (mapQ) btns += '<a class="map" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(mapQ) + '">Ver no mapa</a>';
+  let btns = mapaBtns(it) + '<button data-edit="' + esc(it.id) + '">Editar</button>';
   if (it.link) btns += '<a target="_blank" rel="noopener" href="' + esc(it.link) + '">Abrir reserva</a>';
   if (it.codigo) btns += '<button data-copy="' + esc(it.codigo.split(" ")[0]) + '">Copiar código</button>';
+  const sug = it.tipo === "passeio" || it.tipo === "rest";
+  const curt = Array.isArray(it.curtidas) ? it.curtidas : [], eu = curt.indexOf(email()) >= 0;
+  const side = sug && extra && extra.k === "sug"
+    ? '<button type="button" class="like' + (eu ? " on" : "") + '" data-like="' + esc(it.id) + '" aria-pressed="' + eu + '" title="' + esc(curt.map(nomeDe).join(", ") || "Quero ir") + '">' + I.heart + (curt.length || "") + "</button>"
+    : '<span class="hora">' + esc(hora) + "</span>";
   return '<details class="it t-' + esc(it.tipo) + '" data-k="' + esc(key) + '"' + (S.open[key] ? " open" : "") + ">" +
-    '<summary><span class="ico">' + (I[it.tipo] || I.nota) + '</span><span class="imain"><div class="ititle">' + esc(it.titulo) + '</div><div class="imeta">' + esc(meta.join(" · ")) + '</div></span><span class="hora">' + esc(hora) + "</span></summary>" +
+    '<summary><span class="ico">' + (I[it.tipo] || I.nota) + '</span><span class="imain"><div class="ititle">' + esc(it.titulo) + '</div><div class="imeta">' + esc(meta.join(" · ")) + "</div></span>" + side + "</summary>" +
     '<div class="idet"><dl>' + det.map((r) => "<dt>" + r[0] + "</dt><dd>" + r[1] + "</dd>").join("") + "</dl>" +
     (it.obs ? '<div class="obs">' + esc(it.obs) + "</div>" : "") + '<div class="btns">' + btns + "</div></div></details>";
 }
@@ -150,7 +202,7 @@ function eventosDoDia(day, lista) {
       if (b === day && b !== a) ev.push({ it, k: "dev", hora: it.horaFim || "", label: "Devolução" });
     } else if (a === day) ev.push({ it, k: "x", hora: it.hora || "", label: it.tipo === "voo" ? it.local || "" : "" });
   });
-  ev.sort((x, y) => (x.hora || "99").localeCompare(y.hora || "99"));
+  ev.sort((x, y) => (x.hora || "99").localeCompare(y.hora || "99") || (x.it.ordem || 0) - (y.it.ordem || 0));
   return { ev, dorme };
 }
 function vazio() { return '<div class="empty"><h3>Nada lançado ainda</h3>Use Adicionar, ou Enviar PDF com a confirmação de um voo ou hotel.</div>'; }
@@ -176,8 +228,6 @@ function renderTempo(lista) {
       '<button class="link" style="margin:0;align-self:flex-start" data-addday="' + day + '">+ adicionar neste dia</button></div></details>';
     d.setDate(d.getDate() + 1); n++;
   }
-  const sem = lista.filter((i) => !i.data);
-  if (sem.length) h += '<div class="group"><h2>Ideias sem data</h2><span>' + sem.length + '</span></div><div class="list">' + sem.map((it) => itemHTML(it, { k: "sem", hora: "", label: "" })).join("") + "</div>";
   return h;
 }
 function renderTudo(lista) {
@@ -187,6 +237,101 @@ function renderTudo(lista) {
     return '<div class="group"><h2>' + NOME[t] + "</h2><span>" + g.length + '</span></div><div class="list">' +
       g.map((it) => itemHTML(it, { k: "tudo", hora: it.data ? fdt(it.data) + (it.dataFim && it.dataFim !== it.data ? " → " + fdt(it.dataFim) : "") : "", label: "" })).join("") + "</div>";
   }).join("");
+}
+function renderSug(tipo, lista) {
+  const its = lista.filter((i) => i.tipo === tipo);
+  const nome = tipo === "rest" ? "restaurante" : "passeio";
+  let h = '<div class="sughead"><p class="hint">Sugestões de todo mundo, separadas por cidade. Toque no coração nos que você quer ir e leve para um dia na aba Planejar.</p>' +
+    '<button class="up" data-sugerir="' + tipo + '">' + I.plus + "Sugerir " + nome + "</button></div>";
+  if (!its.length) return h + '<div class="empty"><h3>Nenhum ' + nome + ' sugerido ainda</h3>Toque em Sugerir ' + nome + ' e escolha a cidade.</div>';
+  const cids = cidadesViagem().slice();
+  its.forEach((i) => { const c = itemCidade(i); if (c && cids.indexOf(c) < 0) cids.push(c); });
+  cids.push("");
+  cids.forEach((c) => {
+    const g = its.filter((i) => (itemCidade(i) || "") === c)
+      .sort((a, b) => ((b.curtidas || []).length - (a.curtidas || []).length) || String(a.titulo).localeCompare(String(b.titulo)));
+    if (!g.length) return;
+    h += '<div class="group"><h2>' + esc(c || "Sem cidade") + "</h2><span>" + g.length + '</span></div><div class="list">' +
+      g.map((it) => itemHTML(it, { k: "sug", hora: "", label: "" })).join("") + "</div>";
+  });
+  return h;
+}
+const movivel = (it) => it.tipo === "passeio" || it.tipo === "rest" || it.tipo === "nota";
+function kcard(it) {
+  const c = itemCidade(it);
+  return '<div class="kcard t-' + esc(it.tipo) + '" data-id="' + esc(it.id) + '"><span class="ico">' + (I[it.tipo] || I.nota) + '</span><span class="imain"><div class="ititle">' + esc(it.titulo) +
+    '</div><div class="imeta">' + esc([it.hora, c].filter(Boolean).join(" · ")) + "</div></span>" +
+    '<button type="button" class="kedit" data-edit="' + esc(it.id) + '" aria-label="Editar">…</button></div>';
+}
+function renderPlan(lista) {
+  const inf = S.info || {};
+  if (!inf.inicio || !inf.fim) return '<div class="empty"><h3>Defina as datas da viagem</h3>Em ⚙ Viagem, preencha a ida e a volta para aparecerem as colunas dos dias.</div>';
+  const cids = cidadesViagem(), fc = S.planCidade || "";
+  const ideias = lista.filter((i) => movivel(i) && !i.data && (!fc || itemCidade(i) === fc))
+    .sort((a, b) => ((b.curtidas || []).length - (a.curtidas || []).length) || String(a.titulo).localeCompare(String(b.titulo)));
+  let h = '<p class="hint plan-hint">Segure um card e arraste para um dia. Para tirar do roteiro, arraste de volta para Ideias.</p><div class="kanban">';
+  h += '<section class="kcol ideias"><header><b>Ideias</b><select id="planCidade" aria-label="Cidade"><option value="">Todas as cidades</option>' +
+    cids.map((c) => "<option" + (c === fc ? " selected" : "") + ">" + esc(c) + "</option>").join("") + "</select></header>" +
+    '<div class="klist" data-day="">' + ideias.map(kcard).join("") + "</div>" +
+    (ideias.length ? "" : '<p class="kvazio">Nada aqui. Sugira em Passeios ou Restaurantes.</p>') + "</section>";
+  const d = pd(inf.inicio), fim = pd(inf.fim);
+  let n = 1, guard = 0;
+  while (d <= fim && guard++ < 120) {
+    const day = iso(d), r = eventosDoDia(day, lista);
+    let cid = r.dorme.length ? itemCidade(r.dorme[0]) : "";
+    if (!cid) for (let i = r.ev.length - 1; i >= 0; i--) { const c = itemCidade(r.ev[i].it); if (c) { cid = c; break; } }
+    const fixos = r.ev.filter((e) => !movivel(e.it));
+    const moveis = lista.filter((i) => movivel(i) && i.data === day)
+      .sort((a, b) => (a.hora || "99").localeCompare(b.hora || "99") || (a.ordem || 0) - (b.ordem || 0));
+    h += '<section class="kcol"><header><b>Dia ' + n + " · " + WD[d.getDay()] + " " + d.getDate() + "</b><span>" + esc(cid) + "</span></header>" +
+      fixos.map((e) => '<div class="kfixo t-' + esc(e.it.tipo) + '"><span class="ico">' + (I[e.it.tipo] || I.nota) + "</span><span>" + esc((e.hora ? e.hora + " " : "") + (e.label && e.it.tipo !== "voo" ? e.label + ": " : "") + e.it.titulo) + "</span></div>").join("") +
+      (r.dorme.length ? '<div class="sleep">' + I.bed + esc(r.dorme.map((x) => x.titulo).join(" / ")) + "</div>" : "") +
+      '<div class="klist" data-day="' + day + '">' + moveis.map(kcard).join("") + "</div></section>";
+    d.setDate(d.getDate() + 1); n++;
+  }
+  return h + "</div>";
+}
+let sortableLib = null;
+function carregarSortable() {
+  if (sortableLib) return sortableLib;
+  sortableLib = new Promise((ok, err) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js";
+    sc.onload = () => ok(window.Sortable); sc.onerror = () => { sortableLib = null; err(new Error("sortable")); };
+    document.head.appendChild(sc);
+  });
+  return sortableLib;
+}
+function ligarPlan() {
+  carregarSortable().then((Sortable) => {
+    document.querySelectorAll(".klist").forEach((el) => {
+      Sortable.create(el, {
+        group: "plan", animation: 150, delay: 180, delayOnTouchOnly: true, forceFallback: true, fallbackTolerance: 4, filter: ".kedit", preventOnFilter: false,
+        ghostClass: "kghost", chosenClass: "kchosen", scrollSensitivity: 90, scrollSpeed: 14, bubbleScroll: true,
+        onStart: () => { S.arrastando = true; },
+        onEnd: (ev) => { S.arrastando = false; moverCard(ev); }
+      });
+    });
+  }).catch(() => toast("Não carregou o arrastar. Verifique a internet e recarregue."));
+}
+async function moverCard(ev) {
+  const destino = ev.to, dia = destino.dataset.day || "";
+  const ids = Array.from(destino.querySelectorAll(".kcard")).map((x) => x.dataset.id);
+  const movido = ev.item.dataset.id;
+  if (ev.from === ev.to && ev.oldIndex === ev.newIndex) return render();
+  try {
+    const batch = writeBatch(db);
+    ids.forEach((id, i) => {
+      const it = S.itens.find((x) => x.id === id); if (!it) return;
+      const mud = { ordem: (i + 1) * 10, atualizadoPor: email(), atualizadoEm: serverTimestamp() };
+      if (id === movido) { mud.data = dia; if (!dia) { mud.hora = ""; } if (it.dataFim && it.dataFim !== it.data) mud.dataFim = ""; }
+      batch.update(doc(itensRef(), id), mud);
+      Object.assign(it, { ordem: mud.ordem }, id === movido ? { data: dia } : {});
+    });
+    await batch.commit();
+    toast(dia ? "Levado para " + fdt(dia) : "Voltou para Ideias");
+  } catch (e) { console.error(e); toast(erroTexto(e)); }
+  render();
 }
 function header() {
   const inf = S.info || {};
@@ -206,10 +351,17 @@ function header() {
 function render() {
   if (!$("out")) return;
   header();
-  $("vTempo").setAttribute("aria-pressed", S.view === "tempo");
-  $("vTudo").setAttribute("aria-pressed", S.view === "tudo");
+  if (S.arrastando) return;
+  if (!VIEWS.some((v) => v[0] === S.view)) S.view = "tempo";
+  document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === S.view)));
+  $("toggleAll").hidden = S.view === "plan";
   const lista = S.itens.filter(okFam);
-  $("out").innerHTML = S.view === "tempo" ? renderTempo(lista) : renderTudo(lista);
+  const out = $("out");
+  out.className = S.view === "plan" ? "plan-out" : "";
+  out.innerHTML = S.view === "tempo" ? renderTempo(lista) : S.view === "passeios" ? renderSug("passeio", lista)
+    : S.view === "rest" ? renderSug("rest", lista) : S.view === "plan" ? renderPlan(lista)
+    : renderTudo(lista.filter((i) => ["voo", "hosp", "carro"].indexOf(i.tipo) >= 0 || i.codigo));
+  if (S.view === "plan") ligarPlan();
   syncToggle();
 }
 function syncToggle() {
@@ -266,12 +418,16 @@ function drawEd() {
   h += fld("eHora", "Horário", '<input type="time" id="eHora" name="hora" value="' + esc(it.hora) + '">');
   h += fld("eFim", L[1], '<input type="date" id="eFim" name="dataFim" value="' + esc(it.dataFim) + '">');
   h += fld("eHoraFim", "Horário", '<input type="time" id="eHoraFim" name="horaFim" value="' + esc(it.horaFim) + '">');
+  const cids = cidadesViagem(), cAtual = it.cidade || (ED.novo ? "" : cidade(it));
+  h += fld("eCid", "Cidade", '<select id="eCid" name="cidade"><option value="">—</option>' + cids.concat(cAtual && cids.indexOf(cAtual) < 0 ? [cAtual] : [])
+    .map((c) => "<option" + (c === cAtual ? " selected" : "") + ">" + esc(c) + "</option>").join("") + "</select>", 1);
   h += fld("eLocal", t === "voo" ? "Trecho (ex.: BSB → SCL)" : "Endereço · telefone", '<input id="eLocal" name="local" value="' + esc(it.local) + '">', 1);
   h += fld("eCod", "Código da reserva", '<input id="eCod" name="codigo" value="' + esc(it.codigo) + '">', 1);
   h += fld("eVal", "Valor", '<input type="number" step="0.01" inputmode="decimal" id="eVal" name="valor" value="' + esc(it.valor || "") + '">');
   h += fld("eMoeda", "Moeda", '<select id="eMoeda" name="moeda">' + ["BRL", "CLP", "USD"].map((m) => '<option value="' + m + '"' + ((it.moeda || "BRL") === m ? " selected" : "") + ">" + { BRL: "Real (R$)", CLP: "Peso chileno", USD: "Dólar (US$)" }[m] + "</option>").join("") + "</select>");
   h += '<label class="chk full" for="eConf"><input type="checkbox" id="eConf" name="conf"' + (it.status === "confirmado" ? " checked" : "") + "> Confirmado</label>";
   h += '<label class="chk full" for="ePago"><input type="checkbox" id="ePago" name="pago"' + (it.pago ? " checked" : "") + "> Já foi pago</label>";
+  if (t !== "voo") h += fld("eMapa", "Link do Google Maps (opcional)", '<input type="url" id="eMapa" name="mapa" placeholder="Cole aqui o link de Compartilhar do Maps" value="' + esc(it.mapa) + '">', 1);
   h += fld("eLink", "Link da reserva", '<input type="url" id="eLink" name="link" placeholder="https://" value="' + esc(it.link) + '">', 1);
   h += fld("eObs", "Observações", '<textarea id="eObs" name="obs">' + esc(it.obs) + "</textarea>", 1);
   if (ED.del) h += '<div class="msg full">Excluir "' + esc(it.titulo || "este item") + '" para todo mundo?<div class="acts" style="margin-top:8px"><div class="r"><button type="button" class="btn ghost" id="eDelNao">Cancelar</button><button type="button" class="btn" id="eDelSim">Excluir</button></div></div></div>';
@@ -282,12 +438,12 @@ function drawEd() {
 }
 function readEd() {
   const f = $("edForm"); if (!f) return; const it = ED.it;
-  ["tipo", "familia", "titulo", "data", "hora", "dataFim", "horaFim", "local", "codigo", "moeda", "link", "obs"].forEach((k) => { it[k] = f.elements[k].value.trim(); });
+  ["tipo", "familia", "titulo", "data", "hora", "dataFim", "horaFim", "local", "codigo", "moeda", "link", "obs", "cidade", "mapa"].forEach((k) => { if (f.elements[k]) it[k] = f.elements[k].value.trim(); });
   it.valor = +f.elements.valor.value || 0; it.status = f.elements.conf.checked ? "confirmado" : "pendente"; it.pago = f.elements.pago.checked;
 }
-function abrirEd(id, dia) {
+function abrirEd(id, dia, tipo) {
   const old = S.itens.find((x) => x.id === id);
-  const it = old ? Object.assign({}, old) : { tipo: "passeio", titulo: "", data: dia || "", hora: "", dataFim: "", horaFim: "", local: "", codigo: "", valor: 0, moeda: "CLP", status: "pendente", pago: false, link: "", obs: "", familia: "Geral" };
+  const it = old ? Object.assign({}, old) : { tipo: tipo || "passeio", sugeridoPor: email(), cidade: "", mapa: "", titulo: "", data: dia || "", hora: "", dataFim: "", horaFim: "", local: "", codigo: "", valor: 0, moeda: "CLP", status: "pendente", pago: false, link: "", obs: "", familia: "Geral" };
   ED = { it, novo: !old, busy: false, err: "", del: false }; drawEd();
 }
 function fecharSheet() { ED = null; UP = null; CFG = null; $("sheetRoot").innerHTML = ""; }
@@ -339,8 +495,8 @@ async function organizar() {
     const exist = S.itens.map((x) => JSON.stringify({ id: x.id, tipo: x.tipo, titulo: x.titulo, data: x.data, codigo: x.codigo || "", familia: x.familia || "" })).join("\n");
     const prompt = "Você organiza uma viagem em grupo (" + (inf.nome || "") + ", " + (inf.inicio || "") + " a " + (inf.fim || "") + "). Leia os arquivos anexos (confirmações de reserva) e extraia cada reserva como um item.\n" +
       "Tipos: voo (cada trecho é um item), hosp (hospedagem), carro (aluguel), passeio, rest (restaurante), nota (outro).\n" +
-      'Responda só com JSON: {"itens":[{"substitui":"id de um item existente que esta confirmação atualiza, ou vazio","tipo":"","titulo":"curto em português, ex.: LATAM LA8108 Brasília → Santiago","data":"AAAA-MM-DD","hora":"HH:MM","dataFim":"AAAA-MM-DD","horaFim":"HH:MM","local":"","codigo":"","valor":0,"moeda":"BRL|CLP|USD","confirmado":true,"pago":false,"link":"","obs":"","familia":"Geral"}]}\n' +
-      "Regras: data/hora = partida do voo, check-in, retirada do carro ou horário do passeio; dataFim/horaFim = chegada, check-out ou devolução. local = aeroportos (ex.: BSB → SCL) ou endereço · telefone. codigo = localizador ou nº da reserva, com o PIN se houver (ex.: 1234567 (PIN 1234)). valor = total na moeda original, número sem separador de milhar. obs = detalhes úteis e curtos: quartos, passageiros, forma de pagamento, política de cancelamento, quem reservou. familia = Geral se for do grupo todo; senão um destes: " + familias().join(", ") + ". Use substitui quando o código de reserva ou o mesmo voo/hotel já existir na lista. Nunca invente horários, valores ou códigos: deixe vazio ou 0.\n" +
+      'Responda só com JSON: {"itens":[{"substitui":"id de um item existente que esta confirmação atualiza, ou vazio","tipo":"","titulo":"curto em português, ex.: LATAM LA8108 Brasília → Santiago","data":"AAAA-MM-DD","hora":"HH:MM","dataFim":"AAAA-MM-DD","horaFim":"HH:MM","local":"","codigo":"","valor":0,"moeda":"BRL|CLP|USD","confirmado":true,"pago":false,"link":"","obs":"","familia":"Geral","cidade":""}]}\n' +
+      "Regras: data/hora = partida do voo, check-in, retirada do carro ou horário do passeio; dataFim/horaFim = chegada, check-out ou devolução. local = aeroportos (ex.: BSB → SCL) ou endereço · telefone. codigo = localizador ou nº da reserva, com o PIN se houver (ex.: 1234567 (PIN 1234)). valor = total na moeda original, número sem separador de milhar. obs = detalhes úteis e curtos: quartos, passageiros, forma de pagamento, política de cancelamento, quem reservou. familia = Geral se for do grupo todo; senão um destes: " + familias().join(", ") + ". cidade = uma destas, se der para saber: " + cidadesViagem().join(", ") + ". Use substitui quando o código de reserva ou o mesmo voo/hotel já existir na lista. Nunca invente horários, valores ou códigos: deixe vazio ou 0.\n" +
       "ITENS QUE JÁ EXISTEM:\n" + (exist || "(nenhum)") + "\n\n" + (b.nota.trim() ? "OBSERVAÇÃO DE QUEM ENVIOU: " + b.nota.trim() + "\n" : "");
     const model = await getGemini();
     const res = await model.generateContent([prompt].concat(partes));
@@ -361,7 +517,8 @@ async function organizar() {
       it.status = old ? old.status || "confirmado" : x.confirmado === false ? "pendente" : "confirmado";
       it.pago = !!(x.pago || (old && old.pago));
       const fam = limpa(x.familia); it.familia = fams.indexOf(fam) >= 0 ? fam : old ? old.familia : "Geral";
-      if (!old) it.id = novoId(it);
+      const cx = limpa(x.cidade); if (cx) it.cidade = cx;
+      if (!old) { it.id = novoId(it); it.sugeridoPor = email(); }
       return { it, substitui: old };
     });
     if (!UP) return;
@@ -398,6 +555,8 @@ function drawCfg() {
   h += fld("cIni", "Ida", '<input type="date" id="cIni" name="inicio" value="' + esc(v.inicio) + '">');
   h += fld("cFim", "Volta", '<input type="date" id="cFim" name="fim" value="' + esc(v.fim) + '">');
   h += fld("cFam", "Famílias ou casais (separados por vírgula)", '<input id="cFam" name="familias" placeholder="Ex.: Thiago e Luana, Rodrigo e Carol" value="' + esc(v.familias) + '">', 1);
+  h += fld("cCid", "Cidades, na ordem do roteiro (separadas por vírgula)", '<input id="cCid" name="cidades" placeholder="Ex.: Santiago, Pucón, Puerto Varas" value="' + esc(v.cidades || (nova ? "" : cidadesViagem().join(", "))) + '">', 1);
+  h += fld("cPais", "País (ajuda o mapa a achar os lugares)", '<input id="cPais" name="pais" placeholder="Ex.: Chile" value="' + esc(v.pais) + '">', 1);
   h += fld("cViaj", "Quem vai", '<input id="cViaj" name="viajantes" value="' + esc(v.viajantes) + '">', 1);
   h += fld("cMemb", "E-mails Google que podem ver e editar (um por linha)", '<textarea id="cMemb" name="membros" style="min-height:110px">' + esc((v.membros || [email()]).join("\n")) + "</textarea>", 1);
   h += '<p class="hint full">Quem não estiver nesta lista não consegue abrir a viagem, nem com o link. O seu e-mail fica sempre na lista.</p>';
@@ -412,7 +571,7 @@ function drawCfg() {
 }
 function readCfg() {
   const f = $("cfgForm"); const v = CFG.v;
-  ["nome", "inicio", "fim", "familias", "viajantes"].forEach((k) => { v[k] = f.elements[k].value.trim(); });
+  ["nome", "inicio", "fim", "familias", "viajantes", "cidades", "pais"].forEach((k) => { v[k] = f.elements[k].value.trim(); });
   const m = f.elements.membros.value.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
   if (m.indexOf(email()) < 0) m.unshift(email());
   v.membros = Array.from(new Set(m));
@@ -422,7 +581,7 @@ async function salvarCfg() {
   if (!v.nome) { CFG.err = "Dê um nome à viagem."; drawCfg(); return; }
   if (v.inicio && v.fim && v.fim < v.inicio) { CFG.err = "A volta está antes da ida."; drawCfg(); return; }
   CFG.busy = true; CFG.err = ""; drawCfg();
-  const dados = { nome: v.nome, inicio: v.inicio, fim: v.fim, familias: v.familias, viajantes: v.viajantes, membros: v.membros };
+  const dados = { nome: v.nome, inicio: v.inicio, fim: v.fim, familias: v.familias, viajantes: v.viajantes, cidades: v.cidades || "", pais: v.pais || "", membros: v.membros };
   try {
     if (CFG.nova) {
       const ref = await addDoc(collection(db, "viagens"), Object.assign(dados, { dono: email(), criadoEm: serverTimestamp() }));
@@ -469,8 +628,17 @@ document.addEventListener("click", async (e) => {
   if (c("#voltarBtn")) return fecharViagem();
   if (c("#novaViagem")) { CFG = { nova: true, v: { nome: "", inicio: "", fim: "", familias: "", viajantes: "", membros: [email()] }, busy: false, err: "" }; return drawCfg(); }
   if (c("#cfgBtn")) { CFG = { nova: false, v: Object.assign({}, S.info), busy: false, err: "" }; return drawCfg(); }
-  if (c("#vTempo")) { S.view = "tempo"; try { localStorage.setItem("v-view", "tempo"); } catch (x) {} return render(); }
-  if (c("#vTudo")) { S.view = "tudo"; try { localStorage.setItem("v-view", "tudo"); } catch (x) {} return render(); }
+  const vw = c("[data-view]");
+  if (vw) { S.view = vw.dataset.view; try { localStorage.setItem("v-view", S.view); } catch (x) {} window.scrollTo(0, 0); return render(); }
+  const sg = c("[data-sugerir]"); if (sg) return abrirEd(null, "", sg.dataset.sugerir);
+  const lk = c("[data-like]");
+  if (lk) {
+    e.preventDefault();
+    const it = S.itens.find((x) => x.id === lk.dataset.like); if (!it) return;
+    const tem = (it.curtidas || []).indexOf(email()) >= 0;
+    try { await updateDoc(doc(itensRef(), it.id), { curtidas: tem ? arrayRemove(email()) : arrayUnion(email()) }); } catch (x) { toast(erroTexto(x)); }
+    return;
+  }
   if (c("#toggleAll")) {
     const all = document.querySelectorAll(S.view === "tempo" ? ".day" : ".it"), abrir = $("toggleAll").textContent === "Abrir todos";
     all.forEach((el) => { el.open = abrir; S.open[el.dataset.k] = abrir; }); return syncToggle();
@@ -503,6 +671,7 @@ document.addEventListener("click", async (e) => {
 });
 document.addEventListener("change", (e) => {
   const t = e.target;
+  if (t.id === "planCidade") { S.planCidade = t.value; return render(); }
   if (t.id === "fam") { S.fam = t.value; try { localStorage.setItem("v-fam-" + S.vid, S.fam); } catch (x) {} t.blur(); return render(); }
   if (ED && t.id === "eTipo") { readEd(); return drawEd(); }
   if (UP && t.id === "upFile") { lerNota(); UP.files = UP.files.concat(Array.from(t.files || [])).slice(0, 6); UP.err = ""; return drawUp(); }
