@@ -76,7 +76,17 @@ function money(v, m) {
 }
 const familias = () => String(S.info && S.info.familias || "").split(",").map((s) => s.trim()).filter(Boolean);
 const COMUNS = ["passeio", "rest", "nota"];
-const okFam = (it) => !S.fam || COMUNS.indexOf(it.tipo) >= 0 || !it.familia || it.familia === S.fam || it.familia === "Geral" || (it.divide || []).indexOf(S.fam) >= 0;
+// Esconde uma reserva só quando ela é, com certeza, de OUTRO casal. Grupo todo, vários casais ou sem casal: aparece para todos.
+const normF = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+function okFam(it) {
+  if (!S.fam || COMUNS.indexOf(it.tipo) >= 0) return true;
+  const eu = normF(S.fam), f = normF(it.familia);
+  const div = Array.isArray(it.divide) ? it.divide.map(normF) : [];
+  if (div.indexOf(eu) >= 0 || div.length > 1) return true;
+  if (!f || f === eu || f === "geral" || f === "grupo todo" || f === "todos" || f.indexOf(eu) >= 0) return true;
+  const outras = familias().map(normF).filter((x) => x !== eu);
+  return outras.indexOf(f) < 0; // só some se for exatamente o nome de outro casal
+}
 const minhaFamilia = () => ((S.info && S.info.membrosFamilia) || {})[email()] || "";
 function toast(t) { const r = $("toastRoot"); r.innerHTML = '<div class="toast" role="status">' + esc(t) + "</div>"; clearTimeout(toast.t); toast.t = setTimeout(() => { r.innerHTML = ""; }, 2200); }
 function cidade(it) {
