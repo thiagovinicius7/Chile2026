@@ -135,10 +135,20 @@ function erroTexto(e) {
 
 /* ---------- telas ---------- */
 function telaLogin(msg) {
-  $("app").innerHTML = '<div class="center"><h1>Viagens</h1><p>Roteiro, hotéis, voos e passeios da família, num lugar só.</p>' +
-    '<button class="gbtn" id="loginBtn">' + I.google + "Entrar com Google</button>" + (msg ? '<p class="msg">' + esc(msg) + "</p>" : "") + "</div>";
+  document.body.classList.add("no-login");
+  $("app").innerHTML = '<section class="login">' +
+    '<img class="login-logo" src="logo.webp" width="720" height="720" alt="Pucón, Puerto Varas, Chiloé e Santiago — dezembro de 2026">' +
+    '<h1>Chile em Família</h1>' +
+    '<p class="login-sub">Roteiro, reservas, passeios e restaurantes da viagem, num lugar só.</p>' +
+    '<button class="gbtn" id="loginBtn"><span class="gico">' + I.google + "</span>Entrar com Google</button>" +
+    (msg ? '<p class="login-msg">' + esc(msg) + "</p>" : '<p class="login-nota">Só entra quem foi convidado para a viagem.</p>') +
+    "</section>" +
+    '<svg class="login-serra" viewBox="0 0 400 90" preserveAspectRatio="none" aria-hidden="true">' +
+    '<path class="s1" d="M0 90V52l38-22 26 14 40-34 30 22 28-12 36 30 34-26 30 18 40-30 34 26 30-12 34 22v42z"/>' +
+    '<path class="s2" d="M0 90V66l46-14 40 12 44-20 38 16 46-12 40 14 48-18 44 16 54-10v50z"/></svg>';
 }
 function telaLista() {
+  document.body.classList.remove("no-login");
   const v = S.viagens.slice().sort((a, b) => (b.inicio || "").localeCompare(a.inicio || ""));
   let h = '<header><div class="topline"><span class="eyebrow">' + esc(S.user.email) + '</span><button class="mini" id="sairBtn">Sair</button></div><h1>Suas viagens</h1></header>';
   if (!S.carregou) h += '<p class="status">Carregando…</p>';
@@ -149,6 +159,7 @@ function telaLista() {
   $("app").innerHTML = h;
 }
 function telaViagem() {
+  document.body.classList.remove("no-login");
   let h = '<header><div class="topline"><span class="eyebrow" id="hDates"></span><span style="display:inline-flex;gap:6px">' +
     (S.viagens.length > 1 ? '<button class="mini" id="voltarBtn">' + I.back + "Viagens</button>" : "") +
     '<button class="mini" id="cfgBtn">' + I.gear + "Viagem</button></span></div>" +
