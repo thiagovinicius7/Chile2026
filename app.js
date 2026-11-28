@@ -151,14 +151,15 @@ function erroTexto(e) {
 }
 
 /* ---------- telas ---------- */
-function telaLogin(msg) {
+function telaLogin(msg, codigo) {
   document.body.classList.add("no-login");
   $("app").innerHTML = '<section class="login">' +
     '<img class="login-logo" src="logo.webp" width="720" height="720" alt="Pucón, Puerto Varas, Chiloé e Santiago — dezembro de 2026">' +
     '<h1>Chile em Família</h1>' +
     '<p class="login-sub">Roteiro, reservas, passeios e restaurantes da viagem, num lugar só.</p>' +
     '<button class="gbtn" id="loginBtn"><span class="gico">' + I.google + "</span>Entrar com Google</button>" +
-    (msg ? '<p class="login-msg">' + esc(msg) + "</p>" : '<p class="login-nota">Só entra quem foi convidado para a viagem.</p>') +
+    (msg ? '<p class="login-msg">' + esc(msg) + (codigo ? '<span class="login-cod">' + esc(codigo) + "</span>" : "") + "</p>" +
+      '<button class="link" id="loginRedir" style="margin:0">Tentar entrar de outro jeito</button>' : '<p class="login-nota">Só entra quem foi convidado para a viagem.</p>') +
     "</section>" +
     '<svg class="login-serra" viewBox="0 0 400 90" preserveAspectRatio="none" aria-hidden="true">' +
     '<path class="s1" d="M0 90V52l38-22 26 14 40-34 30 22 28-12 36 30 34-26 30 18 40-30 34 26 30-12 34 22v42z"/>' +
@@ -780,13 +781,21 @@ document.addEventListener("toggle", (e) => { const k = e.target.dataset && e.tar
 document.addEventListener("click", async (e) => {
   const t = e.target, c = (sel) => t.closest && t.closest(sel);
   if (c("#loginBtn")) {
-    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    const prov = new GoogleAuthProvider(); prov.setCustomParameters({ prompt: "select_account" });
+    try { await signInWithPopup(auth, prov); }
     catch (err) {
-      if (/popup-blocked|operation-not-supported/.test(err.code || "")) return signInWithRedirect(auth, new GoogleAuthProvider());
-      if (!/popup-closed|cancelled-popup/.test(err.code || "")) telaLogin("Não deu para entrar. " + (/unauthorized-domain/.test(err.code || "") ? "Este endereço ainda não foi autorizado no Firebase." : "Tente de novo."));
+      const code = err.code || "";
+      if (/cancelled-popup/.test(code)) return;
+      telaLogin(/popup-closed/.test(code) ? "O login não terminou. Se você escolheu a sua conta e mesmo assim voltou para cá, este navegador está bloqueando o login do Google. Abra o link no Chrome (no celular) e entre por lá."
+        : /popup-blocked/.test(code) ? "O navegador bloqueou a janela de login do Google. Toque de novo em Entrar com Google; se continuar, permita pop-ups para este site ou abra o link no Chrome."
+        : /operation-not-supported|web-storage-unsupported/.test(code) ? "Este navegador não deixa fazer o login. Abra o link no Chrome ou no Safari (se abriu pelo WhatsApp ou Instagram, use \"Abrir no navegador\")."
+        : /unauthorized-domain/.test(code) ? "Este endereço ainda não foi autorizado no Firebase."
+        : /network/.test(code) ? "Sem conexão com a internet. Tente de novo."
+        : "Não deu para entrar. Tente de novo.", code);
     }
     return;
   }
+  if (c("#loginRedir")) { try { sessionStorage.setItem("tentouRedir", "1"); } catch (x) {} return signInWithRedirect(auth, new GoogleAuthProvider()); }
   if (c("#sairBtn") || c("#sairBtn2")) { fecharSheet(); return signOut(auth); }
   const ab = c("[data-abrir]"); if (ab) return abrirViagem(ab.dataset.abrir);
   if (c("#voltarBtn")) return fecharViagem();
@@ -874,13 +883,17 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("sheet
 window.addEventListener("hashchange", () => { const id = decodeURIComponent(location.hash.slice(1)); if (id && id !== S.vid && S.viagens.some((v) => v.id === id)) abrirViagem(id); });
 
 /* ---------- início ---------- */
-getRedirectResult(auth).catch(() => {});
+let avisoRedir = "";
+getRedirectResult(auth).then(() => {
+  let tentou = false; try { tentou = sessionStorage.getItem("tentouRedir") === "1"; sessionStorage.removeItem("tentouRedir"); } catch (x) {}
+  if (tentou && !auth.currentUser) { avisoRedir = "O login voltou sem terminar. Isso acontece em alguns navegadores: use o botão Entrar com Google (abre uma janela) ou abra o link no Chrome."; if (!S.user) telaLogin(avisoRedir); }
+}).catch((e) => { avisoRedir = "O login pelo Google não terminou."; if (!S.user) telaLogin(avisoRedir, e && e.code); });
 onAuthStateChanged(auth, (u) => {
   S.user = u;
   if (unsubViagens) { unsubViagens(); unsubViagens = null; }
   if (unsubItens) { unsubItens(); unsubItens = null; }
   if (unsubDocs) { unsubDocs(); unsubDocs = null; }
   S.vid = null; S.viagens = []; S.itens = [];
-  if (!u) return telaLogin();
+  if (!u) return telaLogin(avisoRedir);
   telaLista(); ouvirViagens();
 });
