@@ -169,7 +169,9 @@ function telaLista() {
   document.body.classList.remove("no-login");
   const v = S.viagens.slice().sort((a, b) => (b.inicio || "").localeCompare(a.inicio || ""));
   let h = '<header><div class="topline"><span class="eyebrow">' + esc(S.user.email) + '</span><button class="mini" id="sairBtn">Sair</button></div><h1>Suas viagens</h1></header>';
-  if (!S.carregou) h += '<p class="status">Carregando…</p>';
+  if (S.erroLista) h += '<div class="empty"><h3>O banco de dados recusou a leitura</h3>Você entrou como <b>' + esc(S.user.email) + '</b>, mas o Firestore não deixou ler as viagens. Isso costuma ser as <b>regras de acesso</b> do Firestore que não foram publicadas inteiras, ou esta conta não estar na lista da viagem.' +
+    '<p class="login-cod">' + esc((S.erroLista.code || "") + " " + String(S.erroLista.message || "").slice(0, 160)) + '</p><div class="btns" style="justify-content:center"><button id="sairBtn">Entrar com outra conta</button></div></div>';
+  else if (!S.carregou) h += '<p class="status">Carregando…</p>';
   else if (!v.length) h += '<div class="empty"><h3>Nenhuma viagem com o seu e-mail</h3>Se alguém te convidou, peça para conferir se cadastrou ' + esc(S.user.email) + ' na viagem. Ou crie uma nova.</div>';
   h += '<div class="trips">' + v.map((x) => '<button class="trip" data-abrir="' + esc(x.id) + '"><div><b>' + esc(x.nome || "Viagem") + "</b><span>" +
     (x.inicio ? fdt(x.inicio) + " a " + fdtAno(x.fim) : "Sem datas") + "</span></div>" + I.chev.replace('class="chev"', 'class="chev" style="transform:rotate(-90deg)"') + "</button>").join("") + "</div>";
@@ -410,7 +412,7 @@ function syncToggle() {
 /* ---------- dados ---------- */
 function ouvirViagens() {
   if (unsubViagens) unsubViagens();
-  S.carregou = false;
+  S.carregou = false; S.erroLista = null;
   unsubViagens = onSnapshot(query(collection(db, "viagens"), where("membros", "array-contains", email())), (q) => {
     S.viagens = q.docs.map((d) => Object.assign({ id: d.id }, d.data()));
     S.carregou = true;
@@ -424,7 +426,9 @@ function ouvirViagens() {
     S.info = S.viagens.find((v) => v.id === S.vid) || S.info;
     if (S.famAuto && !S.fam && minhaFamilia()) S.fam = minhaFamilia();
     render();
-  }, (e) => { console.error(e); telaLogin("Não consegui abrir suas viagens. " + erroTexto(e)); });
+  }, (e) => {
+    console.error(e); S.carregou = true; S.erroLista = e; telaLista();
+  });
 }
 function abrirViagem(id) {
   S.vid = id; S.info = S.viagens.find((v) => v.id === id) || null; S.itens = []; S.fam = ""; S.open = {};
